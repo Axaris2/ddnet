@@ -3,6 +3,6 @@
 #ifndef GAME_SERVER_GAMEMODES_GAMEMODE_H
 #define GAME_SERVER_GAMEMODES_GAMEMODE_H
 
-#define GAME_NAME "DDraceNetwork"
-#define TEST_NAME "TestDDraceNetwork"
-#endif // GAME_SERVER_GAMEMODES_GAMEMODE_H
+#define GAME_NAME "infection"
+#define TEST_NAME "infection"
+#endif

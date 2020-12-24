@@ -4,6 +4,7 @@
 #include <game/generated/protocol.h>
 #include <game/server/gamecontext.h>
 #include <game/server/gamemodes/DDRace.h>
+#include <game/server/gamemodes/infection.h>
 
 #include <engine/shared/config.h>
 #include <game/server/teams.h>
@@ -67,6 +68,8 @@ bool CLaser::HitCharacter(vec2 From, vec2 To)
 	{
 		pHit->UnFreeze();
 	}
+
+		pHit->TakeDamage(vec2(0.f, 0.f), GameServer()->Tuning()->m_LaserDamage, m_Owner, WEAPON_LASER);
 	return true;
 }
 
@@ -126,7 +129,7 @@ void CLaser::DoBounce()
 			else
 				m_Energy -= distance(m_From, m_Pos) + GameServer()->TuningList()[m_TuneZone].m_LaserBounceCost;
 
-			CGameControllerDDRace *pControllerDDRace = (CGameControllerDDRace *)GameServer()->m_pController;
+			CGameControllerInfection *pControllerDDRace = (CGameControllerInfection *)GameServer()->m_pController;
 			if(Res == TILE_TELEINWEAPON && pControllerDDRace->m_TeleOuts[z - 1].size())
 			{
 				int TeleOut = GameServer()->m_World.m_Core.RandomOr0(pControllerDDRace->m_TeleOuts[z - 1].size());

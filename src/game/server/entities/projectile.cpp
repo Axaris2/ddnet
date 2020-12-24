@@ -4,7 +4,7 @@
 #include <game/generated/protocol.h>
 #include <game/server/gamecontext.h>
 #include <game/server/gamemodes/DDRace.h>
-
+#include <game/server/gamemodes/infection.h>
 #include <engine/shared/config.h>
 #include <game/server/teams.h>
 
@@ -15,12 +15,15 @@ CProjectile::CProjectile(
 	vec2 Pos,
 	vec2 Dir,
 	int Span,
+	int Damage,
 	bool Freeze,
 	bool Explosive,
 	float Force,
 	int SoundImpact,
+	int Weapon,
 	int Layer,
-	int Number) :
+	int Number,
+	int Firework) :
 	CEntity(pGameWorld, CGameWorld::ENTTYPE_PROJECTILE)
 {
 	m_Type = Type;
@@ -29,8 +32,9 @@ CProjectile::CProjectile(
 	m_LifeSpan = Span;
 	m_Owner = Owner;
 	m_Force = Force;
-	//m_Damage = Damage;
+	m_Damage = Damage;
 	m_SoundImpact = SoundImpact;
+	m_Weapon = Weapon;
 	m_StartTick = Server()->Tick();
 	m_Explosive = Explosive;
 
@@ -160,6 +164,11 @@ void CProjectile::Tick()
 				GameServer()->CreateSound(ColPos, m_SoundImpact,
 					(m_Owner != -1) ? TeamMask : -1LL);
 			}
+			if(m_Firework > 1)
+			{
+				GameServer()->doCreateFirework(m_Owner, CurPos);
+				m_Firework = 1;
+			}
 		}
 		else if(m_Freeze)
 		{
@@ -169,6 +178,15 @@ void CProjectile::Tick()
 				if(apEnts[i] && (m_Layer != LAYER_SWITCH || (m_Layer == LAYER_SWITCH && GameServer()->Collision()->m_pSwitchers[m_Number].m_Status[apEnts[i]->Team()])))
 					apEnts[i]->Freeze();
 		}
+		else
+		{
+			CCharacter *apEnts[MAX_CLIENTS];
+			int Num = GameWorld()->FindEntities(CurPos, 1.0f, (CEntity **)apEnts, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
+			for(int i = 0; i < Num; ++i)
+				if(apEnts[i] && (m_Layer != LAYER_SWITCH || (m_Layer == LAYER_SWITCH && GameServer()->Collision()->m_pSwitchers[m_Number].m_Status[apEnts[i]->Team()])))
+					apEnts[i]->TakeDamage(m_Direction * fmax(0.001f, m_Force), m_Damage, m_Owner, m_Weapon);
+		}
+			
 
 		if(pOwnerChar && !GameLayerClipped(ColPos) &&
 			((m_Type == WEAPON_GRENADE && pOwnerChar->HasTelegunGrenade()) || (m_Type == WEAPON_GUN && pOwnerChar->HasTelegunGun())))
@@ -240,6 +258,7 @@ void CProjectile::Tick()
 			}
 		}
 	}
+
 	if(m_LifeSpan == -1)
 	{
 		if(m_Explosive)
@@ -257,7 +276,16 @@ void CProjectile::Tick()
 				(m_Owner != -1) ? TeamMask : -1LL);
 			GameServer()->CreateSound(ColPos, m_SoundImpact,
 				(m_Owner != -1) ? TeamMask : -1LL);
+
+			if(m_Firework > 1)
+			{
+				GameServer()->doCreateFirework(m_Owner, CurPos);
+				m_Firework = 1;
+			}
 		}
+		else if(pTargetChr)
+			pTargetChr->TakeDamage(m_Direction * fmax(0.001f, m_Force), m_Damage, m_Owner, m_Weapon);
+
 		GameServer()->m_World.DestroyEntity(this);
 		return;
 	}
@@ -268,7 +296,7 @@ void CProjectile::Tick()
 		z = GameServer()->Collision()->IsTeleport(x);
 	else
 		z = GameServer()->Collision()->IsTeleportWeapon(x);
-	CGameControllerDDRace *pControllerDDRace = (CGameControllerDDRace *)GameServer()->m_pController;
+	CGameControllerInfection *pControllerDDRace = (CGameControllerInfection *)GameServer()->m_pController;
 	if(z && pControllerDDRace->m_TeleOuts[z - 1].size())
 	{
 		int TeleOut = GameServer()->m_World.m_Core.RandomOr0(pControllerDDRace->m_TeleOuts[z - 1].size());
@@ -320,7 +348,8 @@ void CProjectile::Snap(int SnappingClient)
 	if(pProj)
 	{
 		if(SnappingClient > -1 && GameServer()->m_apPlayers[SnappingClient] && GameServer()->m_apPlayers[SnappingClient]->GetClientVersion() >= VERSION_DDNET_ANTIPING_PROJECTILE)
-			FillExtraInfo(pProj);
+			FillInfo(pProj);
+		//FillExtraInfo(pProj);
 		else
 			FillInfo(pProj);
 	}

@@ -29,6 +29,13 @@ class CCollision
 	class CLayers *m_pLayers;
 
 public:
+	enum
+	{
+		COLFLAG_SOLID = 1,
+		COLFLAG_DEATH = 2,
+		COLFLAG_NOHOOK = 4,
+	};
+
 	CCollision();
 	~CCollision();
 	void Init(class CLayers *pLayers);
@@ -68,7 +75,6 @@ public:
 		return GetMoveRestrictions(0, 0, Pos, Distance);
 	}
 
-	int GetTile(int x, int y);
 	int GetFTile(int x, int y);
 	int Entity(int x, int y, int Layer);
 	int GetPureMapIndex(float x, float y);
@@ -110,11 +116,26 @@ public:
 
 	vec2 CpSpeed(int index, int Flags = 0);
 
+	int FastIntersectLine(vec2 Pos0, vec2 Pos1, vec2 *pOutCollision, vec2 *pOutBeforeCollision) const;
+
 	class CTeleTile *TeleLayer() { return m_pTele; }
 	class CSwitchTile *SwitchLayer() { return m_pSwitch; }
 	class CTuneTile *TuneLayer() { return m_pTune; }
 	class CLayers *Layers() { return m_pLayers; }
 	int m_NumSwitchers;
+
+	bool IsTileSolid(int x, int y) const;
+	int GetTile(int x, int y) const;
+
+	bool CheckPoint(float x, float y) const { return IsTileSolid(round_to_int(x), round_to_int(y)); }
+	bool CheckPoint(vec2 Pos) const { return CheckPoint(Pos.x, Pos.y); }
+	int GetCollisionAt(float x, float y) const { return GetTile(round_to_int(x), round_to_int(y)); }
+	int GetWidth() const { return m_Width; };
+	int GetHeight() const { return m_Height; };
+	int IntersectLine(vec2 Pos0, vec2 Pos1, vec2 *pOutCollision, vec2 *pOutBeforeCollision) const;
+	void MovePoint(vec2 *pInoutPos, vec2 *pInoutVel, float Elasticity, int *pBounces) const;
+	void MoveBox(vec2 *pInoutPos, vec2 *pInoutVel, vec2 Size, float Elasticity) const;
+	bool TestBox(vec2 Pos, vec2 Size) const;
 
 private:
 	class CTeleTile *m_pTele;

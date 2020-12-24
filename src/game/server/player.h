@@ -32,6 +32,15 @@ public:
 	int GetClientVersion() const;
 	bool SetTimerType(int NewType);
 
+	void Infect(int By = -1, int Weapon = WEAPON_HAMMER);
+	void Cure(int By = -1, int WEAPON = WEAPON_GAME);
+	inline bool Infected() { return (m_Zombie != HUMAN); }
+	void Mute() { m_Muted = true; }
+	void Unmute() { m_Muted = false; }
+	bool IsMuted() { return m_Muted; }
+	bool SpawnProtection();
+	bool IsInfTeam(int ClientID);
+
 	void Tick();
 	void PostTick();
 
@@ -88,9 +97,11 @@ public:
 
 	CTeeInfo m_TeeInfos;
 
+	int m_RespawnTick;
 	int m_DieTick;
 	int m_PreviousDieTick;
 	int m_Score;
+	int m_ScoreStartTick;
 	int m_JoinTick;
 	bool m_ForceBalanced;
 	int m_LastActionTick;
@@ -112,6 +123,24 @@ public:
 		int m_Min;
 		int m_Max;
 	} m_Latency;
+	// Bot flag
+	bool m_IsBot;
+	class CBot *m_pBot;
+
+	bool IsBot() { return m_IsBot; }
+
+	enum
+	{
+		HUMAN = 0,
+		ZOMBIE = 1,
+		I_ZOMBIE = 2
+	};
+	int m_Zombie;
+	int m_Kills;
+	bool m_AirstrikeNotFirework;
+	bool m_HasSuperJump;
+	bool m_HasAirstrike;
+	bool m_HasFirework;
 
 private:
 	CCharacter *m_pCharacter;
@@ -130,6 +159,12 @@ private:
 	int m_Paused;
 	int64 m_ForcePauseTime;
 	int64 m_LastPause;
+
+	// DDRace
+
+	//infection
+	bool m_Muted;
+
 
 public:
 	enum

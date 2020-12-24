@@ -71,7 +71,7 @@ public:
 	void FireWeapon();
 
 	void Die(int Killer, int Weapon);
-	bool TakeDamage(vec2 Force, int Dmg, int From, int Weapon);
+	bool TakeDamage(vec2 Force, int Dmg, int From, int Weapon, int Firework = 0);
 
 	bool Spawn(class CPlayer *pPlayer, vec2 Pos);
 	bool Remove();
@@ -79,7 +79,8 @@ public:
 	bool IncreaseHealth(int Amount);
 	bool IncreaseArmor(int Amount);
 
-	void GiveWeapon(int Weapon, bool Remove = false);
+	void ClearWeapons();
+	bool GiveWeapon(int Weapon, int Ammo);
 	void GiveNinja();
 	void RemoveNinja();
 
@@ -91,6 +92,12 @@ public:
 	bool IsAlive() const { return m_Alive; }
 	bool IsPaused() const { return m_Paused; }
 	class CPlayer *GetPlayer() { return m_pPlayer; }
+
+	void ResetWall();
+	void SetPos(vec2 pos);
+
+	class CWall* m_pWall;
+	vec2 m_WallStart;
 
 private:
 	// player controlling this character
@@ -127,6 +134,12 @@ private:
 	// last tick that the player took any action ie some input
 	int m_LastAction;
 	int m_LastNoAmmoSound;
+
+	int m_LastDamagerID;
+	int m_LastDamagerWeapon;
+	int m_DamageInfoTick;
+
+	int m_SpawnProtectIndicatorID;
 
 	// these are non-heldback inputs
 	CNetObj_PlayerInput m_LatestPrevPrevInput;
@@ -266,6 +279,10 @@ public:
 	void SetNinjaActivationDir(vec2 ActivationDir) { m_Ninja.m_ActivationDir = ActivationDir; };
 	void SetNinjaActivationTick(int ActivationTick) { m_Ninja.m_ActivationTick = ActivationTick; };
 	void SetNinjaCurrentMoveTime(int CurrentMoveTime) { m_Ninja.m_CurrentMoveTime = CurrentMoveTime; };
+	int GetHealth() { return m_Health; }
+	int GetAmmoCount(int Weapon) { return m_aWeapons[clamp(Weapon, 0, NUM_WEAPONS - 1)].m_Ammo; }
+	bool CanFire() { return m_ReloadTimer <= 0; }
+
 
 	bool HasTelegunGun() { return m_Core.m_HasTelegunGun; };
 	bool HasTelegunGrenade() { return m_Core.m_HasTelegunGrenade; };

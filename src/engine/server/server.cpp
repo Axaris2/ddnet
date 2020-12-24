@@ -613,7 +613,28 @@ const char *CServer::ClientClan(int ClientID)
 	if(ClientID < 0 || ClientID >= MAX_CLIENTS || m_aClients[ClientID].m_State == CServer::CClient::STATE_EMPTY)
 		return "";
 	if(m_aClients[ClientID].m_State == CServer::CClient::STATE_INGAME)
-		return m_aClients[ClientID].m_aClan;
+	{
+		switch(GameServer()->GetPlayerInfectionEnum(ClientID))
+		{
+		case 0: // HUMAN
+		{
+			return m_aClients[ClientID].m_aClan;
+			break;
+		}
+		case 1: // ZOMBIE
+		{
+			return "Zombie";
+			break;
+		}
+		case 2: // IZOMBIE
+		{
+			return "iZombie";
+			break;
+		}
+		default:
+			return m_aClients[ClientID].m_aClan;
+		}
+	}
 	else
 		return "";
 }
@@ -2018,10 +2039,11 @@ void CServer::CacheServerInfoSixup(CCache *pCache, bool SendClients)
 	Packer.AddString(GameServer()->GameType(), 16);
 
 	// flags
-	int Flags = SERVER_FLAG_TIMESCORE;
 	if(g_Config.m_Password[0]) // password set
-		Flags |= SERVER_FLAG_PASSWORD;
-	Packer.AddInt(Flags);
+	{
+		int Flags = SERVER_FLAG_PASSWORD;
+		Packer.AddInt(Flags);
+	}
 
 	int MaxClients = m_NetServer.MaxClients();
 	Packer.AddInt(g_Config.m_SvSkillLevel); // server skill level
@@ -2039,7 +2061,7 @@ void CServer::CacheServerInfoSixup(CCache *pCache, bool SendClients)
 				Packer.AddString(ClientName(i), MAX_NAME_LENGTH); // client name
 				Packer.AddString(ClientClan(i), MAX_CLAN_LENGTH); // client clan
 				Packer.AddInt(m_aClients[i].m_Country); // client country
-				Packer.AddInt(m_aClients[i].m_Score == -9999 ? -1 : -m_aClients[i].m_Score); // client score
+				Packer.AddInt(m_aClients[i].m_Score == -9999 ? 0 : m_aClients[i].m_Score); // client score
 				Packer.AddInt(GameServer()->IsClientPlayer(i) ? 0 : 1); // flag spectator=1, bot=2 (player=0)
 			}
 		}

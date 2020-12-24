@@ -1,6 +1,7 @@
 #include "score.h"
 #include "entities/character.h"
 #include "gamemodes/DDRace.h"
+#include "gamemodes/infection.h"
 #include "save.h"
 
 #include <base/system.h>
@@ -42,7 +43,7 @@ void CScorePlayerResult::SetVariant(Variant v)
 		m_Data.m_MapVote.m_Server[0] = '\0';
 		break;
 	case PLAYER_INFO:
-		m_Data.m_Info.m_Score = -9999;
+		m_Data.m_Info.m_Score = 0;
 		m_Data.m_Info.m_Birthday = 0;
 		m_Data.m_Info.m_HasFinishScore = false;
 		m_Data.m_Info.m_Time = 0;
@@ -146,7 +147,7 @@ CScore::CScore(CGameContext *pGameServer, CDbConnectionPool *pPool) :
 {
 	auto InitResult = std::make_shared<CScoreInitResult>();
 	auto Tmp = std::unique_ptr<CSqlInitData>(new CSqlInitData(InitResult));
-	((CGameControllerDDRace *)(pGameServer->m_pController))->m_pInitResult = InitResult;
+	((CGameControllerInfection *)(pGameServer->m_pController))->m_pInitResult = InitResult;
 	str_copy(Tmp->m_Map, g_Config.m_SvMap, sizeof(Tmp->m_Map));
 
 	uint64 aSeed[2];
@@ -1331,7 +1332,7 @@ void CScore::SaveTeam(int ClientID, const char *Code, const char *Server)
 {
 	if(RateLimitPlayer(ClientID))
 		return;
-	auto *pController = ((CGameControllerDDRace *)(GameServer()->m_pController));
+	auto *pController = ((CGameControllerInfection *)(GameServer()->m_pController));
 	int Team = pController->m_Teams.m_Core.Team(ClientID);
 	if(pController->m_Teams.GetSaving(Team))
 		return;
@@ -1463,7 +1464,7 @@ void CScore::LoadTeam(const char *Code, int ClientID)
 {
 	if(RateLimitPlayer(ClientID))
 		return;
-	auto *pController = ((CGameControllerDDRace *)(GameServer()->m_pController));
+	auto *pController = ((CGameControllerInfection *)(GameServer()->m_pController));
 	int Team = pController->m_Teams.m_Core.Team(ClientID);
 	if(pController->m_Teams.GetSaving(Team))
 		return;

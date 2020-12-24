@@ -2,6 +2,9 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include <base/tl/sorted_array.h>
 
+#include <new>
+#include <string.h>
+#include <sstream>
 #include "gamecontext.h"
 #include "teeinfo.h"
 #include <antibot/antibot_data.h>
@@ -19,6 +22,13 @@
 #include <game/version.h>
 #include <new>
 #include <string.h>
+/*#include "gamemodes/dTickStartTime.h"
+#include "gamemodes/ctf.h"
+#include "gamemodes/mod.h"*/
+
+#include "gamemodes/infection.h"
+#include "entities/projectile.h"
+#include "bot.h"
 
 #include <game/generated/protocol7.h>
 #include <game/generated/protocolglue.h>
@@ -58,6 +68,7 @@ void CGameContext::Construct(int Resetting)
 		m_NumMutes = 0;
 		m_NumVoteMutes = 0;
 	}
+	m_pBotEngine = new CBotEngine(this);
 	m_ChatResponseTargetID = -1;
 	m_aDeleteTempfile[0] = 0;
 	m_TeeHistorianActive = false;
@@ -79,6 +90,8 @@ CGameContext::~CGameContext()
 		delete pPlayer;
 	if(!m_Resetting)
 		delete m_pVoteOptionHeap;
+
+	delete m_pBotEngine;
 
 	if(m_pScore)
 		delete m_pScore;
@@ -213,51 +226,65 @@ void CGameContext::CreateExplosion(vec2 Pos, int Owner, int Weapon, bool NoDamag
 		pEvent->m_Y = (int)Pos.y;
 	}
 
-	// deal damage
-	CCharacter *apEnts[MAX_CLIENTS];
-	float Radius = 135.0f;
-	float InnerRadius = 48.0f;
-	int Num = m_World.FindEntities(Pos, Radius, (CEntity **)apEnts, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
-	int64 TeamMask = -1;
-	for(int i = 0; i < Num; i++)
+	if(!NoDamage)
 	{
-		vec2 Diff = apEnts[i]->m_Pos - Pos;
-		vec2 ForceDir(0, 1);
-		float l = length(Diff);
-		if(l)
-			ForceDir = normalize(Diff);
-		l = 1 - clamp((l - InnerRadius) / (Radius - InnerRadius), 0.0f, 1.0f);
-		float Strength;
-		if(Owner == -1 || !m_apPlayers[Owner] || !m_apPlayers[Owner]->m_TuneZone)
-			Strength = Tuning()->m_ExplosionStrength;
-		else
-			Strength = TuningList()[m_apPlayers[Owner]->m_TuneZone].m_ExplosionStrength;
-
-		float Dmg = Strength * l;
-		if(!(int)Dmg)
-			continue;
-
-		if((GetPlayerChar(Owner) ? !(GetPlayerChar(Owner)->m_Hit & CCharacter::DISABLE_HIT_GRENADE) : g_Config.m_SvHit || NoDamage) || Owner == apEnts[i]->GetPlayer()->GetCID())
+		// deal damage
+		CCharacter *apEnts[MAX_CLIENTS];
+		float Radius = 135.0f;
+		float InnerRadius = 48.0f;
+		int Num = m_World.FindEntities(Pos, Radius, (CEntity **)apEnts, MAX_CLIENTS, CGameWorld::ENTTYPE_CHARACTER);
+		int64 TeamMask = -1;
+		for(int i = 0; i < Num; i++)
 		{
-			if(Owner != -1 && apEnts[i]->IsAlive() && !apEnts[i]->CanCollide(Owner))
-				continue;
-			if(Owner == -1 && ActivatedTeam != -1 && apEnts[i]->IsAlive() && apEnts[i]->Team() != ActivatedTeam)
+			vec2 Diff = apEnts[i]->m_Pos - Pos;
+			vec2 ForceDir(0, 1);
+			float l = length(Diff);
+			if(l)
+				ForceDir = normalize(Diff);
+			l = 1 - clamp((l - InnerRadius) / (Radius - InnerRadius), 0.0f, 1.0f);
+			float Strength;
+			if(Owner == -1 || !m_apPlayers[Owner] || !m_apPlayers[Owner]->m_TuneZone)
+				Strength = Tuning()->m_ExplosionStrength;
+			else
+				Strength = TuningList()[m_apPlayers[Owner]->m_TuneZone].m_ExplosionStrength;
+
+			float Dmg = Strength * l;
+			if(!(int)Dmg)
 				continue;
 
-			// Explode at most once per team
-			int PlayerTeam = ((CGameControllerDDRace *)m_pController)->m_Teams.m_Core.Team(apEnts[i]->GetPlayer()->GetCID());
-			if(GetPlayerChar(Owner) ? GetPlayerChar(Owner)->m_Hit & CCharacter::DISABLE_HIT_GRENADE : !g_Config.m_SvHit || NoDamage)
+			if((GetPlayerChar(Owner) ? !(GetPlayerChar(Owner)->m_Hit & CCharacter::DISABLE_HIT_GRENADE) : g_Config.m_SvHit || NoDamage) || Owner == apEnts[i]->GetPlayer()->GetCID())
 			{
-				if(!CmaskIsSet(TeamMask, PlayerTeam))
+				if(Owner != -1 && apEnts[i]->IsAlive() && !apEnts[i]->CanCollide(Owner))
 					continue;
-				TeamMask = CmaskUnset(TeamMask, PlayerTeam);
-			}
+				if(Owner == -1 && ActivatedTeam != -1 && apEnts[i]->IsAlive() && apEnts[i]->Team() != ActivatedTeam)
+					continue;
 
-			apEnts[i]->TakeDamage(ForceDir * Dmg * 2, (int)Dmg, Owner, Weapon);
+				// Explode at most once per team
+				int PlayerTeam = ((CGameControllerInfection *)m_pController)->m_Teams.m_Core.Team(apEnts[i]->GetPlayer()->GetCID());
+				if(GetPlayerChar(Owner) ? GetPlayerChar(Owner)->m_Hit & CCharacter::DISABLE_HIT_GRENADE : !g_Config.m_SvHit || NoDamage)
+				{
+					if(!CmaskIsSet(TeamMask, PlayerTeam))
+						continue;
+					TeamMask = CmaskUnset(TeamMask, PlayerTeam);
+				}
+
+				apEnts[i]->TakeDamage(ForceDir * Dmg * 2, (int)Dmg, Owner, Weapon);
+			}
 		}
 	}
-}
 
+	/*
+void create_smoke(vec2 Pos)
+{
+	// create the event
+	EV_EXPLOSION *pEvent = (EV_EXPLOSION *)events.create(EVENT_SMOKE, sizeof(EV_EXPLOSION));
+	if(pEvent)
+	{
+		pEvent->x = (int)Pos.x;
+		pEvent->y = (int)Pos.y;
+	}
+}*/
+}
 void CGameContext::CreatePlayerSpawn(vec2 Pos, int64 Mask)
 {
 	// create the event
@@ -311,6 +338,97 @@ void CGameContext::CreateSoundGlobal(int Sound, int Target)
 		if(Target != -1)
 			Flag |= MSGFLAG_NORECORD;
 		Server()->SendPackMsg(&Msg, Flag, Target);
+	}
+}
+
+void CGameContext::CreateAirstrike(vec2 Pos, int Owner) {
+	// TODO: clean up this messy code
+	switch (g_Config.m_InfAirstrikeType)
+	{
+	default:
+	case 0:
+	{
+		const int Num = 15;
+		const int Dist = 100;
+		vec2 DropPos(Pos.x - Num * Dist, 0);
+
+		for (int i = 0; i < Num * 2; i++)
+		{
+			new CProjectile(&m_World, WEAPON_GRENADE,
+				Owner,
+				DropPos,
+				vec2(0, 1),
+				(int)(Server()->TickSpeed() * Tuning()->m_GrenadeLifetime),
+				1, false, 1, 0, SOUND_GRENADE_EXPLODE, WEAPON_GRENADE);
+			DropPos.x += Dist;
+		}
+		break;
+	}
+	case 1:
+	{
+		int Projectiles = 200;
+		vec2 Align{ 16, 16 };
+		for (int x = 0; x < Projectiles; x++) {
+			CProjectile* pProj = new CProjectile(&m_World, WEAPON_GRENADE,
+				Owner,
+				vec2((x - Projectiles / 2) * Align.x + Pos.x, -abs(x - Projectiles / 2) * Align.y),
+				vec2(0, 1),
+				(int)(Server()->TickSpeed() * Tuning()->m_GrenadeLifetime),
+				1, false, 1, 0, SOUND_GRENADE_EXPLODE, WEAPON_GRENADE);
+
+			// pack the Projectile and send it to the client Directly
+			CNetObj_Projectile p;
+			pProj->FillInfo(&p);
+
+			CMsgPacker Msg(NETMSGTYPE_SV_EXTRAPROJECTILE);
+			Msg.AddInt(1);
+			for (unsigned i = 0; i < sizeof(CNetObj_Projectile) / sizeof(int); i++)
+				Msg.AddInt(((int*)&p)[i]);
+			Server()->SendMsg(&Msg, MSGFLAG_VITAL, Owner);
+
+		}
+		break;
+	}
+	}
+	CreateSound(Pos, SOUND_GRENADE_FIRE);
+}
+
+
+void CGameContext::CreateFirework(vec2 Pos, int Owner, vec2 ProjStartPos, vec2 Direction)
+{
+	m_AmountOfFireworks = g_Config.m_InfAmountOfFireworks;
+
+	CProjectile* pProj = new CProjectile(&m_World, WEAPON_GRENADE,
+		Owner,
+		ProjStartPos,
+		Direction,
+		(int)(Server()->TickSpeed() * Tuning()->m_GrenadeLifetime),
+		1, true, 0, SOUND_GRENADE_EXPLODE, WEAPON_GRENADE, 2);
+
+	CreateSound(Pos, SOUND_GRENADE_FIRE);
+}
+
+void CGameContext::doCreateFirework(int Owner, vec2 CurPos) {
+
+	int Tuning2 = (int)(Server()->TickSpeed() * Tuning()->m_GrenadeLifetime);
+	float RocketAmount = 0.77;
+
+	for (float i = -1; i <= 1; i += RocketAmount)
+	{
+		for (float j = -1; j <= 1; j += RocketAmount)
+		{
+			vec2 Posi = CurPos;
+			Posi.x = Posi.x + i * 10;
+			Posi.y = Posi.y + j * 10;
+			vec2 Direction = vec2(i, j);
+			int isFirework = (m_AmountOfFireworks > 0) ? 2 : 1;
+			CProjectile* pProj1 = new CProjectile(&m_World, WEAPON_GRENADE, Owner, Posi, Direction, Tuning2, 1, true, 1, SOUND_GRENADE_EXPLODE, WEAPON_GRENADE, isFirework);
+		}
+	}
+
+	if (m_AmountOfFireworks > 0)
+	{
+		m_AmountOfFireworks--;
 	}
 }
 
@@ -371,7 +489,7 @@ void CGameContext::SendChatTarget(int To, const char *pText, int Flags)
 void CGameContext::SendChatTeam(int Team, const char *pText)
 {
 	for(int i = 0; i < MAX_CLIENTS; i++)
-		if(((CGameControllerDDRace *)m_pController)->m_Teams.m_Core.Team(i) == Team)
+		if(((CGameControllerInfection *)m_pController)->m_Teams.m_Core.Team(i) == Team)
 			SendChatTarget(i, pText);
 }
 
@@ -420,7 +538,7 @@ void CGameContext::SendChat(int ChatterClientID, int Team, const char *pText, in
 	}
 	else
 	{
-		CTeamsCore *Teams = &((CGameControllerDDRace *)m_pController)->m_Teams.m_Core;
+		CTeamsCore *Teams = &((CGameControllerInfection *)m_pController)->m_Teams.m_Core;
 		CNetMsg_Sv_Chat Msg;
 		Msg.m_Team = 1;
 		Msg.m_ClientID = ChatterClientID;
@@ -723,10 +841,39 @@ void CGameContext::SendTuningParams(int ClientID, int Zone)
 	Server()->SendMsg(&Msg, MSGFLAG_VITAL, ClientID);
 }
 
+void CGameContext::SwapTeams()
+{
+	if(!m_pController->IsTeamplay())
+		return;
+
+	SendChat(-1, CGameContext::CHAT_ALL, "Teams were swapped");
+
+	for(int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		if(m_apPlayers[i] && m_apPlayers[i]->GetTeam() != TEAM_SPECTATORS)
+			m_apPlayers[i]->SetTeam(m_apPlayers[i]->GetTeam()^1, false);
+	}
+
+	(void)m_pController->CheckTeamBalance();
+}
+
 void CGameContext::OnTick()
 {
 	// check tuning
 	CheckPureTuning();
+
+	// Check bot number
+	CheckBotNumber();
+
+	// Test basic move for bots
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(!m_apPlayers[i] || !m_apPlayers[i]->m_IsBot)
+			continue;
+		CNetObj_PlayerInput Input = m_apPlayers[i]->m_pBot->GetLastInputData();
+		m_apPlayers[i]->OnPredictedInput(&Input);
+	}
+
 
 	if(m_TeeHistorianActive)
 	{
@@ -824,7 +971,7 @@ void CGameContext::OnTick()
 				int64 Now = Server()->Tick();
 				for(int i = 0; i < MAX_CLIENTS; i++)
 				{
-					if(!m_apPlayers[i] || aVoteChecked[i])
+					if(!m_apPlayers[i] || aVoteChecked[i] || m_apPlayers[i]->m_IsBot)
 						continue;
 
 					if((IsKickVote() || IsSpecVote()) && (m_apPlayers[i]->GetTeam() == TEAM_SPECTATORS ||
@@ -1009,6 +1156,15 @@ void CGameContext::OnTick()
 		m_SqlRandomMapResult = nullptr;
 	}
 
+	// Test basic move for bots
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(!m_apPlayers[i] || !m_apPlayers[i]->m_IsBot)
+			continue;
+		CNetObj_PlayerInput Input = m_apPlayers[i]->m_pBot->GetInputData();
+		m_apPlayers[i]->OnDirectInput(&Input);
+	}
+
 #ifdef CONF_DEBUG
 	if(g_Config.m_DbgDummies)
 	{
@@ -1144,12 +1300,16 @@ void CGameContext::OnClientEnter(int ClientID)
 	//world.insert_entity(&players[client_id]);
 	m_apPlayers[ClientID]->Respawn();
 	// init the player
-	Score()->PlayerData(ClientID)->Reset();
-	m_apPlayers[ClientID]->m_Score = Score()->PlayerData(ClientID)->m_BestTime ? Score()->PlayerData(ClientID)->m_BestTime : -9999;
+	char aBuf[512];
+	str_format(aBuf, sizeof(aBuf), "'%s' entered and joined the %s", Server()->ClientName(ClientID), m_pController->GetTeamName(m_apPlayers[ClientID]->GetTeam()));
+	SendChat(-1, CGameContext::CHAT_ALL, aBuf);
+
+	str_format(aBuf, sizeof(aBuf), "team_join player='%d:%s' team=%d", ClientID, Server()->ClientName(ClientID), m_apPlayers[ClientID]->GetTeam());
+	Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
 
 	// Can't set score here as LoadScore() is threaded, run it in
 	// LoadScoreThreaded() instead
-	Score()->LoadPlayerData(ClientID);
+	//Score()->LoadPlayerData(ClientID);
 
 	if(Server()->IsSixup(ClientID))
 	{
@@ -1307,21 +1467,27 @@ void CGameContext::OnClientEnter(int ClientID)
 
 void CGameContext::OnClientConnected(int ClientID)
 {
+	//Check if the slot is used by a bot
+	if(m_apPlayers[ClientID] && m_apPlayers[ClientID]->m_IsBot)
 	{
-		bool Empty = true;
-		for(auto &pPlayer : m_apPlayers)
+		delete m_apPlayers[ClientID];
+		m_apPlayers[ClientID] = 0;
+	}
+
+	bool Empty = true;
+	for(auto &pPlayer : m_apPlayers)
+	{
+		if(pPlayer)
 		{
-			if(pPlayer)
-			{
-				Empty = false;
-				break;
-			}
-		}
-		if(Empty)
-		{
-			m_NonEmptySince = Server()->Tick();
+			Empty = false;
+			break;
 		}
 	}
+	if(Empty)
+	{
+		m_NonEmptySince = Server()->Tick();
+	}
+	
 
 	// Check which team the player should be on
 	const int StartTeam = g_Config.m_SvTournamentMode ? TEAM_SPECTATORS : m_pController->GetAutoTeam(ClientID);
@@ -1338,6 +1504,10 @@ void CGameContext::OnClientConnected(int ClientID)
 	}
 	//players[client_id].init(client_id);
 	//players[client_id].client_id = client_id;
+
+
+	CheckBotNumber();
+
 
 #ifdef CONF_DEBUG
 	if(g_Config.m_DbgDummies)
@@ -1399,6 +1569,8 @@ void CGameContext::OnClientDrop(int ClientID, const char *pReason)
 	Server()->SendPackMsg(&Msg, MSGFLAG_VITAL | MSGFLAG_NORECORD, -1);
 
 	Server()->ExpireServerInfo();
+
+	CheckBotNumber();
 }
 
 void CGameContext::OnClientEngineJoin(int ClientID, bool Sixup)
@@ -1441,10 +1613,10 @@ void CGameContext::OnClientDDNetVersionKnown(int ClientID)
 		pPlayer->m_TimerType = g_Config.m_SvDefaultTimerType;
 
 	// First update the teams state.
-	((CGameControllerDDRace *)m_pController)->m_Teams.SendTeamsState(ClientID);
+	((CGameControllerInfection *)m_pController)->m_Teams.SendTeamsState(ClientID);
 
 	// Then send records.
-	SendRecord(ClientID);
+	//SendRecord(ClientID);
 
 	// And report correct tunings.
 	if(ClientVersion >= VERSION_DDNET_EXTRATUNES)
@@ -1499,7 +1671,7 @@ void *CGameContext::PreProcessMsg(int *MsgID, CUnpacker *pUnpacker, int ClientID
 			::CNetMsg_Cl_StartInfo *pMsg = (::CNetMsg_Cl_StartInfo *)s_aRawMsg;
 
 			pMsg->m_pName = pMsg7->m_pName;
-			pMsg->m_pClan = pMsg7->m_pClan;
+			pMsg->m_pClan = pMsg7->m_pClan; 
 			pMsg->m_Country = pMsg7->m_Country;
 
 			CTeeInfo Info(pMsg7->m_apSkinPartNames, pMsg7->m_aUseCustomColors, pMsg7->m_aSkinPartColors);
@@ -1630,6 +1802,7 @@ void CGameContext::CensorMessage(char *pCensoredMessage, const char *pMessage, i
 			}
 		} while(pCurLoc);
 	}
+
 }
 
 void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
@@ -1704,7 +1877,7 @@ void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
 
 			pPlayer->UpdatePlaytime();
 
-			int GameTeam = ((CGameControllerDDRace *)m_pController)->m_Teams.m_Core.Team(pPlayer->GetCID());
+			int GameTeam = ((CGameControllerInfection *)m_pController)->m_Teams.m_Core.Team(pPlayer->GetCID());
 			if(Team)
 				Team = ((pPlayer->GetTeam() == -1) ? CHAT_SPEC : GameTeam);
 			else
@@ -1926,6 +2099,11 @@ void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
 				if(KickID == ClientID)
 				{
 					SendChatTarget(ClientID, "You can't kick yourself");
+					return;
+				}
+				if(m_apPlayers[KickID]->m_IsBot)
+				{
+					SendChatTarget(ClientID, "You can't kick server bots");
 					return;
 				}
 				if(!Server()->ReverseTranslate(KickID, ClientID))
@@ -2182,11 +2360,6 @@ void CGameContext::OnMessage(int MsgID, CUnpacker *pUnpacker, int ClientID)
 				char aChatText[256];
 				str_format(aChatText, sizeof(aChatText), "'%s' changed name to '%s'", aOldName, Server()->ClientName(ClientID));
 				SendChat(-1, CGameContext::CHAT_ALL, aChatText);
-
-				// reload scores
-				Score()->PlayerData(ClientID)->Reset();
-				m_apPlayers[ClientID]->m_Score = -9999;
-				Score()->LoadPlayerData(ClientID);
 
 				SixupNeedsUpdate = true;
 			}
@@ -2983,6 +3156,153 @@ void CGameContext::ConchainSpecialMotdupdate(IConsole::IResult *pResult, void *p
 	}
 }
 
+void CGameContext::ConZombie(IConsole::IResult* pResult, void* pUserData) {
+	CGameContext* pSelf = (CGameContext*)pUserData;
+	int ClientID = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+
+	if (!pSelf->m_apPlayers[ClientID])
+		return;
+
+	pSelf->m_apPlayers[ClientID]->Infect();
+}
+
+void CGameContext::ConCure(IConsole::IResult* pResult, void* pUserData) {
+	CGameContext* pSelf = (CGameContext*)pUserData;
+	int ClientID = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+
+	if (!pSelf->m_apPlayers[ClientID])
+		return;
+
+	pSelf->m_apPlayers[ClientID]->Cure();
+}
+
+void CGameContext::ConIZombie(IConsole::IResult* pResult, void* pUserData) {
+	CGameContext* pSelf = (CGameContext*)pUserData;
+	int ClientID = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+
+	if (!pSelf->m_apPlayers[ClientID])
+		return;
+
+	pSelf->m_apPlayers[ClientID]->Infect();
+	pSelf->m_apPlayers[ClientID]->m_Zombie = CPlayer::I_ZOMBIE;
+}
+
+void CGameContext::ConIZombieOrder(IConsole::IResult* pResult, void* pUserData) {
+	std::ostringstream aBuf;
+
+	CGameContext* pSelf = (CGameContext*)pUserData;
+
+	const int* izOrder = pSelf->m_pController->GetIdArray();
+	const int currentId = pSelf->m_pController->GetCurrentIZombie();
+
+	aBuf << "Current iZombie order is: ";
+
+	for (int i = 0; i < MAX_CLIENTS; i++)
+	{
+		bool isCurrent = (izOrder[i] == currentId);
+		aBuf << (isCurrent ? "[" : "") << izOrder[i] << (isCurrent ? "] " : " ");
+	}
+
+	pSelf->m_pConsole->Print(IConsole::OUTPUT_LEVEL_STANDARD, "Server", aBuf.str().c_str());
+}
+
+void CGameContext::ConAirstrike(IConsole::IResult* pResult, void* pUserData) {
+	CGameContext* pSelf = (CGameContext*)pUserData;
+	int ClientID = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+
+	if (!pSelf->m_apPlayers[ClientID])
+		return;
+
+	pSelf->m_apPlayers[ClientID]->m_HasAirstrike = true;
+}
+
+void CGameContext::ConFirework(IConsole::IResult* pResult, void* pUserData) {
+	CGameContext* pSelf = (CGameContext*)pUserData;
+	int ClientID = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+
+	if (!pSelf->m_apPlayers[ClientID])
+		return;
+
+	pSelf->m_apPlayers[ClientID]->m_HasFirework = true;
+}
+
+void CGameContext::ConSuperJump(IConsole::IResult* pResult, void* pUserData) {
+	CGameContext* pSelf = (CGameContext*)pUserData;
+	int ClientID = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+
+	if (!pSelf->m_apPlayers[ClientID])
+		return;
+
+	pSelf->m_apPlayers[ClientID]->GetCharacter()->Core()->m_Jumps += 9;
+}
+
+void CGameContext::ConTeleportAbsPos(IConsole::IResult* pResult, void* pUserData)
+{
+	CGameContext* pSelf = (CGameContext*)pUserData;
+	int ClientID = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+
+	int x = pResult->GetInteger(1) * 32;
+	int y = pResult->GetInteger(2) * 32;
+
+	pSelf->Teleport(pSelf->m_apPlayers[ClientID]->GetCharacter(), vec2(x, y));
+}
+
+void CGameContext::ConTeleportRelPos(IConsole::IResult* pResult, void* pUserData)
+{
+	CGameContext* pSelf = (CGameContext*)pUserData;
+	int ClientID = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+
+	int x = pResult->GetInteger(1) * 32;
+	int y = pResult->GetInteger(2) * 32;
+
+	if (!pSelf->m_apPlayers[ClientID])
+		return;
+
+	CCharacter* pCharacter = pSelf->m_apPlayers[ClientID]->GetCharacter();
+
+	if (!pCharacter)
+		return;
+
+	vec2 pos = pCharacter->m_Pos + vec2(x, y);
+
+	pSelf->Teleport(pCharacter, pos);
+}
+
+void CGameContext::ConTeleportToPlayer(IConsole::IResult* pResult, void* pUserData)
+{
+	CGameContext* pSelf = (CGameContext*)pUserData;
+
+	int ClientID1 = clamp(pResult->GetInteger(0), 0, MAX_CLIENTS - 1);
+	int ClientID2 = clamp(pResult->GetInteger(1), 0, MAX_CLIENTS - 1);
+
+	if (!pSelf->m_apPlayers[ClientID1] || !pSelf->m_apPlayers[ClientID2])
+		return;
+
+	CCharacter* pCharacter1 = pSelf->m_apPlayers[ClientID1]->GetCharacter();
+	CCharacter* pCharacter2 = pSelf->m_apPlayers[ClientID2]->GetCharacter();
+
+	if (!pCharacter1 || !pCharacter2)
+		return;
+
+	vec2 pos = pCharacter2->m_Pos + vec2(1, -1);
+
+	pSelf->Teleport(pCharacter1, pos);
+}
+
+void CGameContext::Teleport(CCharacter* pCharacter, vec2 pos)
+{
+	if (!pCharacter)
+		return;
+
+	if (g_Config.m_SvTpEffects)
+	{
+		CreatePlayerSpawn(pCharacter->m_Pos);
+		CreatePlayerSpawn(pos);
+	}
+
+	pCharacter->SetPos(pos);
+}
+
 void CGameContext::OnConsoleInit()
 {
 	m_pServer = Kernel()->RequestInterface<IServer>();
@@ -3022,6 +3342,15 @@ void CGameContext::OnConsoleInit()
 	Console()->Register("dump_antibot", "", CFGFLAG_SERVER, ConDumpAntibot, this, "Dumps the antibot status");
 
 	Console()->Chain("sv_motd", ConchainSpecialMotdupdate, this);
+
+	Console()->Register("zombie", "i", CFGFLAG_SERVER, ConZombie, this, "Turn someone into a zombie");
+	Console()->Register("cure", "i", CFGFLAG_SERVER, ConCure, this, "Cure someone");
+	Console()->Register("izombie", "i", CFGFLAG_SERVER, ConIZombie, this, "Turn someone into an iZombie");
+	Console()->Register("izombie_order", "", CFGFLAG_SERVER, ConIZombieOrder, this, "Print current iZombie order");
+	Console()->Register("airstrike", "i", CFGFLAG_SERVER, ConAirstrike, this, "Give airstrike to a player");
+	Console()->Register("firework", "i", CFGFLAG_SERVER, ConFirework, this, "Give firework to a player");
+	Console()->Register("superjump", "i", CFGFLAG_SERVER, ConSuperJump, this, "Give superjump to a zombie");
+
 
 #define CONSOLE_COMMAND(name, params, flags, callback, userdata, help) m_pConsole->Register(name, params, flags, callback, userdata, help);
 #include <game/ddracecommands.h>
@@ -3074,12 +3403,12 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	CTuningParams TuningParams;
 	for(int i = 0; i < NUM_TUNEZONES; i++)
 	{
-		TuningList()[i] = TuningParams;
+		/*TuningList()[i] = TuningParams;
 		TuningList()[i].Set("gun_curvature", 0);
 		TuningList()[i].Set("gun_speed", 1400);
 		TuningList()[i].Set("shotgun_curvature", 0);
 		TuningList()[i].Set("shotgun_speed", 500);
-		TuningList()[i].Set("shotgun_speeddiff", 0);
+		TuningList()[i].Set("shotgun_speeddiff", 0);*/
 	}
 
 	for(int i = 0; i < NUM_TUNEZONES; i++)
@@ -3095,11 +3424,11 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	}
 	else
 	{
-		Tuning()->Set("gun_speed", 1400);
+		/*Tuning()->Set("gun_speed", 1400);
 		Tuning()->Set("gun_curvature", 0);
 		Tuning()->Set("shotgun_speed", 500);
 		Tuning()->Set("shotgun_speeddiff", 0);
-		Tuning()->Set("shotgun_curvature", 0);
+		Tuning()->Set("shotgun_curvature", 0);*/
 	}
 
 	if(g_Config.m_SvDDRaceTuneReset)
@@ -3110,7 +3439,7 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 		g_Config.m_SvOldTeleportHook = 0;
 		g_Config.m_SvOldTeleportWeapons = 0;
 		g_Config.m_SvTeleportHoldHook = 0;
-		g_Config.m_SvTeam = 1;
+		g_Config.m_SvTeam = 0;
 		g_Config.m_SvShowOthersDefault = 0;
 
 		if(Collision()->m_NumSwitchers > 0)
@@ -3139,8 +3468,8 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 		}
 	}
 
-	m_pController = new CGameControllerDDRace(this);
-	((CGameControllerDDRace *)m_pController)->m_Teams.Reset();
+	m_pController = new CGameControllerInfection(this);
+	((CGameControllerInfection*)m_pController)->m_Teams.Reset();
 
 	const char *pCensorFilename = "censorlist.txt";
 	IOHANDLE File = Storage()->OpenFile(pCensorFilename, IOFLAG_READ, IStorage::TYPE_ALL);
@@ -3222,10 +3551,6 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 		}
 	}
 
-	if(!m_pScore)
-	{
-		m_pScore = new CScore(this, ((CServer *)Server())->DbPool());
-	}
 
 	// setup core world
 	//for(int i = 0; i < MAX_CLIENTS; i++)
@@ -3234,6 +3559,8 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 	// create all entities from the game layer
 	CMapItemLayerTilemap *pTileMap = m_Layers.GameLayer();
 	CTile *pTiles = (CTile *)Kernel()->RequestInterface<IMap>()->GetData(pTileMap->m_Data);
+
+	m_pBotEngine->Init(pTiles, pTileMap->m_Width, pTileMap->m_Height);
 
 	CTile *pFront = 0;
 	CSwitchTile *pSwitch = 0;
@@ -3255,7 +3582,8 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 			}
 			else if(Index == TILE_NPC)
 			{
-				m_Tuning.Set("player_collision", 0);
+				//infection
+				m_Tuning.Set("player_collision", 1);
 				dbg_msg("game_layer", "found no collision tile");
 			}
 			else if(Index == TILE_EHOOK)
@@ -3291,7 +3619,8 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 				}
 				else if(Index == TILE_NPC)
 				{
-					m_Tuning.Set("player_collision", 0);
+					//infection
+					m_Tuning.Set("player_collision", 1);
 					dbg_msg("front_layer", "found no collision tile");
 				}
 				else if(Index == TILE_EHOOK)
@@ -3340,6 +3669,7 @@ void CGameContext::OnInit(/*class IKernel *pKernel*/)
 		}
 	}
 #endif
+	CheckBotNumber();
 }
 
 void CGameContext::DeleteTempfile()
@@ -3565,12 +3895,75 @@ void CGameContext::OnSnap(int ClientID)
 
 	if(ClientID > -1)
 		m_apPlayers[ClientID]->FakeSnap();
+
+	
+	// Snap bot debug info
+	if(g_Config.m_SvBotEngineDrawGraph)
+		m_pBotEngine->Snap(ClientID);
+	for(int i = 0; i < MAX_CLIENTS; i++)
+		if(m_apPlayers[i] && m_apPlayers[i]->IsBot() && g_Config.m_SvBotDrawTarget)
+			m_apPlayers[i]->m_pBot->Snap(ClientID);
 }
 void CGameContext::OnPreSnap() {}
 void CGameContext::OnPostSnap()
 {
 	m_Events.Clear();
 }
+
+void CGameContext::CheckBotNumber()
+{
+	int BotNumber = 0;
+	int PlayerCount = 0;
+	for(int i = 0; i < MAX_CLIENTS; ++i)
+	{
+		if(!m_apPlayers[i])
+			continue;
+		if(m_apPlayers[i]->m_IsBot)
+			BotNumber++;
+		else
+			PlayerCount++;
+	}
+	if(!PlayerCount)
+		BotNumber += g_Config.m_SvBotSlots;
+	// Remove bot excedent
+	if(BotNumber - g_Config.m_SvBotSlots > 0)
+	{
+		int FirstBot = 0;
+		for(int i = 0; i < BotNumber - g_Config.m_SvBotSlots; i++)
+		{
+			for(; FirstBot < MAX_CLIENTS; FirstBot++)
+				if(m_apPlayers[FirstBot] && m_apPlayers[FirstBot]->m_IsBot)
+					break;
+			if(FirstBot < MAX_CLIENTS)
+			{
+				delete m_apPlayers[FirstBot];
+				m_apPlayers[FirstBot] = 0;
+			}
+		}
+	}
+	// Add missing bot if possible
+	if(g_Config.m_SvBotSlots - BotNumber > 0)
+	{
+		int LastFreeSlot = Server()->MaxClients() - 1;
+		for(int i = 0; i < g_Config.m_SvBotSlots - BotNumber; i++)
+		{
+			for(; LastFreeSlot >= 0; LastFreeSlot--)
+				if(!m_apPlayers[LastFreeSlot])
+					break;
+			if(LastFreeSlot >= 0)
+			{
+				dbg_msg("context", "Add a bot at slot: %d", LastFreeSlot);
+				const int StartTeam = g_Config.m_SvTournamentMode ? TEAM_SPECTATORS : m_pController->GetAutoTeam(LastFreeSlot);
+				if(StartTeam == TEAM_SPECTATORS)
+					break;
+				m_apPlayers[LastFreeSlot] = new(LastFreeSlot) CPlayer(this, LastFreeSlot, StartTeam);
+				m_apPlayers[LastFreeSlot]->m_IsBot = true;
+				m_apPlayers[LastFreeSlot]->m_pBot = new CBot(m_pBotEngine, m_apPlayers[LastFreeSlot]);
+			}
+		}
+	}
+}
+
 
 bool CGameContext::IsClientReady(int ClientID)
 {
@@ -3580,6 +3973,11 @@ bool CGameContext::IsClientReady(int ClientID)
 bool CGameContext::IsClientPlayer(int ClientID)
 {
 	return m_apPlayers[ClientID] && m_apPlayers[ClientID]->GetTeam() == TEAM_SPECTATORS ? false : true;
+}
+
+int CGameContext::GetPlayerInfectionEnum(int ClientID) 
+{
+	return m_apPlayers[ClientID]->m_Zombie;
 }
 
 CUuid CGameContext::GameUuid() { return m_GameUuid; }
@@ -3734,7 +4132,7 @@ int CGameContext::ProcessSpamProtection(int ClientID)
 
 int CGameContext::GetDDRaceTeam(int ClientID)
 {
-	CGameControllerDDRace *pController = (CGameControllerDDRace *)m_pController;
+	CGameControllerInfection *pController = (CGameControllerInfection *)m_pController;
 	return pController->m_Teams.m_Core.Team(ClientID);
 }
 
@@ -3742,11 +4140,11 @@ void CGameContext::ResetTuning()
 {
 	CTuningParams TuningParams;
 	m_Tuning = TuningParams;
-	Tuning()->Set("gun_speed", 1400);
+	/*Tuning()->Set("gun_speed", 1400);
 	Tuning()->Set("gun_curvature", 0);
 	Tuning()->Set("shotgun_speed", 500);
 	Tuning()->Set("shotgun_speeddiff", 0);
-	Tuning()->Set("shotgun_curvature", 0);
+	Tuning()->Set("shotgun_curvature", 0);*/
 	SendTuningParams(-1);
 }
 
@@ -4111,4 +4509,127 @@ bool CGameContext::RateLimitPlayerMapVote(int ClientID)
 		return true;
 	}
 	return false;
+}
+
+#define MIN3(x, y, z) ((y) <= (z) ? \
+			       ((x) <= (y) ? (x) : (y)) : \
+			       ((x) <= (z) ? (x) : (z)))
+
+#define MAX3(x, y, z) ((y) >= (z) ? \
+			       ((x) >= (y) ? (x) : (y)) : \
+			       ((x) >= (z) ? (x) : (z)))
+
+
+inline float HueToRgb(float v1, float v2, float h)
+{
+	if(h < 0.0f)
+		h += 1;
+	if(h > 1.0f)
+		h -= 1;
+	if((6.0f * h) < 1.0f)
+		return v1 + (v2 - v1) * 6.0f * h;
+	if((2.0f * h) < 1.0f)
+		return v2;
+	if((3.0f * h) < 2.0f)
+		return v1 + (v2 - v1) * ((2.0f / 3.0f) - h) * 6.0f;
+	return v1;
+}
+
+inline vec3 HslToRgb(vec3 HSL)
+{
+	if(HSL.s == 0.0f)
+		return vec3(HSL.l, HSL.l, HSL.l);
+	else
+	{
+		float v2 = HSL.l < 0.5f ? HSL.l * (1.0f + HSL.s) : (HSL.l + HSL.s) - (HSL.s * HSL.l);
+		float v1 = 2.0f * HSL.l - v2;
+
+		return vec3(HueToRgb(v1, v2, HSL.h + (1.0f / 3.0f)), HueToRgb(v1, v2, HSL.h), HueToRgb(v1, v2, HSL.h - (1.0f / 3.0f)));
+	}
+}
+
+inline vec3 RgbToHsl(vec3 RGB)
+{
+	vec3 HSL;
+	float MaxColor = MAX3(RGB.r, RGB.g, RGB.b);
+	float MinColor = MIN3(RGB.r, RGB.g, RGB.b);
+	if(MinColor == MaxColor)
+		return vec3(0.0f, 0.0f, RGB.g * 255.0f);
+	else
+	{
+		HSL.l = (MinColor + MaxColor) / 2;
+
+		if(HSL.l < 0.5)
+			HSL.s = (MaxColor - MinColor) / (MaxColor + MinColor);
+		else
+			HSL.s = (MaxColor - MinColor) / (2.0 - MaxColor - MinColor);
+
+		if(RGB.r == MaxColor)
+			HSL.h = (RGB.g - RGB.b) / (MaxColor - MinColor);
+		else if(RGB.g == MaxColor)
+			HSL.h = 2.0 + (RGB.b - RGB.r) / (MaxColor - MinColor);
+		else
+			HSL.h = 4.0 + (RGB.r - RGB.g) / (MaxColor - MinColor);
+
+		HSL.h /= 6; //to bring it to a number between 0 and 1
+		if(HSL.h < 0)
+			HSL.h++;
+	}
+	HSL.h = int(HSL.h * 255.0);
+	HSL.s = int(HSL.s * 255.0);
+	HSL.l = int(HSL.l * 255.0);
+	return HSL;
+}
+
+inline vec3 GetColorV3(int v)
+{
+	return HslToRgb(vec3(((v >> 16) & 0xff) / 255.0f, ((v >> 8) & 0xff) / 255.0f, 0.5f + (v & 0xff) / 255.0f * 0.5f));
+}
+
+inline double ColorDistance(vec3 e1, vec3 e2)
+{
+	e1.r = e1.r * 255.0f;
+	e1.g = e1.g * 255.0f;
+	e1.b = e1.b * 255.0f;
+
+	e2.r = e2.r * 255.0f;
+	e2.g = e2.g * 255.0f;
+	e2.b = e2.b * 255.0f;
+
+	long rmean = ((long)e1.r + (long)e2.r) / 2;
+	long r = (long)e1.r - (long)e2.r;
+	long g = (long)e1.g - (long)e2.g;
+	long b = (long)e1.b - (long)e2.b;
+	return sqrt((((512 + rmean) * r * r) >> 8) + 4 * g * g + (((767 - rmean) * b * b) >> 8));
+}
+
+void CGameContext::SendSkinChange(int ClientID, int TargetID)
+{
+	protocol7::CNetMsg_Sv_SkinChange Msg;
+	Msg.m_ClientID = ClientID;
+	for(int p = 0; p < protocol7::NUM_SKINPARTS; p++)
+	{
+		if (m_apPlayers[ClientID]->Infected())
+		{
+			Msg.m_aSkinPartColors[p] = g_Config.m_InfZombieBodyColor;
+		}
+		else
+		{
+			vec3 colorPlayer = GetColorV3(m_apPlayers[ClientID]->m_TeeInfos.m_aSkinPartColors[p]);
+			vec3 colorZombie = GetColorV3(g_Config.m_InfZombieBodyColor);
+
+			if(p == 0 && ColorDistance(colorPlayer, colorZombie) < 130)
+			{
+				Msg.m_aSkinPartColors[p] = 0;
+			}
+			else 
+			{
+				Msg.m_aSkinPartColors[p] = m_apPlayers[ClientID]->m_TeeInfos.m_aSkinPartColors[p];
+			}
+		}
+
+		Msg.m_apSkinPartNames[p] = m_apPlayers[ClientID]->Infected() ? "cammo" : m_apPlayers[ClientID]->m_TeeInfos.m_apSkinPartNames[p];
+		Msg.m_aUseCustomColors[p] = true;
+	}
+	Server()->SendPackMsg(&Msg, MSGFLAG_VITAL | MSGFLAG_NORECORD, TargetID);
 }

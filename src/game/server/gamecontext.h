@@ -20,6 +20,7 @@
 #include "gameworld.h"
 #include "player.h"
 #include "teehistorian.h"
+#include "botengine.h"
 
 #include <memory>
 
@@ -110,6 +111,11 @@ class CGameContext : public IGameServer
 	static void ConSay(IConsole::IResult *pResult, void *pUserData);
 	static void ConSetTeam(IConsole::IResult *pResult, void *pUserData);
 	static void ConSetTeamAll(IConsole::IResult *pResult, void *pUserData);
+	static void ConSwapTeams(IConsole::IResult *pResult, void *pUserData);
+	static void ConIZombieOrder(IConsole::IResult *pResult, void *pUserData);
+
+	//static void ConShuffleTeams(IConsole::IResult *pResult, void *pUserData);
+	//static void ConLockTeams(IConsole::IResult *pResult, void *pUserData);
 	static void ConAddVote(IConsole::IResult *pResult, void *pUserData);
 	static void ConRemoveVote(IConsole::IResult *pResult, void *pUserData);
 	static void ConForceVote(IConsole::IResult *pResult, void *pUserData);
@@ -120,6 +126,22 @@ class CGameContext : public IGameServer
 	static void ConDrySave(IConsole::IResult *pResult, void *pUserData);
 	static void ConDumpAntibot(IConsole::IResult *pResult, void *pUserData);
 	static void ConchainSpecialMotdupdate(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData);
+
+	static void ConZombie(IConsole::IResult* pResult, void* pUserData);
+	static void ConCure(IConsole::IResult* pResult, void* pUserData);
+	static void ConIZombie(IConsole::IResult* pResult, void* pUserData);
+	static void ConAirstrike(IConsole::IResult* pResult, void* pUserData);
+	static void ConFirework(IConsole::IResult* pResult, void* pUserData);
+	static void ConSuperJump(IConsole::IResult* pResult, void* pUserData);
+
+	static void ConMute(IConsole::IResult* pResult, void* pUserData);
+	static void ConUnmute(IConsole::IResult* pResult, void* pUserData);
+
+	static void ConTeleportAbsPos(IConsole::IResult* pResult, void* pUserData);
+	static void ConTeleportRelPos(IConsole::IResult* pResult, void* pUserData);
+	static void ConTeleportToPlayer(IConsole::IResult* pResult, void* pUserData);
+
+	void Teleport(CCharacter* pCharacter, vec2 pos);
 
 	CGameContext(int Resetting);
 	void Construct(int Resetting);
@@ -155,6 +177,9 @@ public:
 	class CCharacter *GetPlayerChar(int ClientID);
 	bool EmulateBug(int Bug);
 
+	//int m_LockTeams;
+	int m_AmountOfFireworks;
+
 	// voting
 	void StartVote(const char *pDesc, const char *pCommand, const char *pReason, const char *pSixupDesc);
 	void EndVote();
@@ -189,15 +214,20 @@ public:
 	CHeap *m_pVoteOptionHeap;
 	CVoteOptionServer *m_pVoteOptionFirst;
 	CVoteOptionServer *m_pVoteOptionLast;
+	class CBotEngine *m_pBotEngine;
+
 
 	// helper functions
-	void CreateDamageInd(vec2 Pos, float AngleMod, int Amount, int64 Mask = -1);
-	void CreateExplosion(vec2 Pos, int Owner, int Weapon, bool NoDamage, int ActivatedTeam, int64 Mask);
-	void CreateHammerHit(vec2 Pos, int64 Mask = -1);
-	void CreatePlayerSpawn(vec2 Pos, int64 Mask = -1);
-	void CreateDeath(vec2 Pos, int Who, int64 Mask = -1);
-	void CreateSound(vec2 Pos, int Sound, int64 Mask = -1);
-	void CreateSoundGlobal(int Sound, int Target = -1);
+	void CreateDamageInd(vec2 Pos, float AngleMod, int Amount, int64_t Mask=-1);
+	void CreateExplosion(vec2 Pos, int Owner, int Weapon, bool NoDamage, int ActivatedTeam, int64_t Mask);
+	void CreateHammerHit(vec2 Pos, int64_t Mask=-1);
+	void CreatePlayerSpawn(vec2 Pos, int64_t Mask=-1);
+	void CreateDeath(vec2 Pos, int Who, int64_t Mask=-1);
+	void CreateSound(vec2 Pos, int Sound, int64_t Mask=-1);
+	void CreateSoundGlobal(int Sound, int Target=-1);
+	void CreateAirstrike(vec2 Pos, int Owner);
+	void doCreateFirework(int Owner, vec2 CurPos);
+	void CreateFirework(vec2 Pos, int Owner, vec2 ProjStartPos, vec2 Direction);
 
 	enum
 	{
@@ -227,10 +257,15 @@ public:
 	void CheckPureTuning();
 	void SendTuningParams(int ClientID, int Zone = 0);
 
+	// Bot slots
+	void CheckBotNumber();
+
 	struct CVoteOptionServer *GetVoteOption(int Index);
 	void ProgressVoteOptions(int ClientID);
 
 	//
+	void SwapTeams();
+
 	void LoadMapSettings();
 
 	// engine events
@@ -240,6 +275,7 @@ public:
 	virtual void OnShutdown();
 
 	virtual void OnTick();
+	void SendSkinChange(int ClientID, int TargetID);
 	virtual void OnPreSnap();
 	virtual void OnSnap(int ClientID);
 	virtual void OnPostSnap();
@@ -260,6 +296,8 @@ public:
 
 	virtual bool IsClientReady(int ClientID);
 	virtual bool IsClientPlayer(int ClientID);
+
+	int GetPlayerInfectionEnum(int ClientID);
 
 	virtual CUuid GameUuid();
 	virtual const char *GameType();
@@ -379,10 +417,9 @@ private:
 	static void ConVoteMute(IConsole::IResult *pResult, void *pUserData);
 	static void ConVoteUnmute(IConsole::IResult *pResult, void *pUserData);
 	static void ConVoteMutes(IConsole::IResult *pResult, void *pUserData);
-	static void ConMute(IConsole::IResult *pResult, void *pUserData);
+	//static void ConMute(IConsole::IResult *pResult, void *pUserData);
 	static void ConMuteID(IConsole::IResult *pResult, void *pUserData);
 	static void ConMuteIP(IConsole::IResult *pResult, void *pUserData);
-	static void ConUnmute(IConsole::IResult *pResult, void *pUserData);
 	static void ConMutes(IConsole::IResult *pResult, void *pUserData);
 	static void ConModerate(IConsole::IResult *pResult, void *pUserData);
 
@@ -459,4 +496,12 @@ inline int64 CmaskOne(int ClientID) { return 1LL << ClientID; }
 inline int64 CmaskUnset(int64 Mask, int ClientID) { return Mask ^ CmaskOne(ClientID); }
 inline int64 CmaskAllExceptOne(int ClientID) { return CmaskUnset(CmaskAll(), ClientID); }
 inline bool CmaskIsSet(int64 Mask, int ClientID) { return (Mask & CmaskOne(ClientID)) != 0; }
+
+#define MIN3(x, y, z) ((y) <= (z) ? \
+			       ((x) <= (y) ? (x) : (y)) : \
+			       ((x) <= (z) ? (x) : (z)))
+
+#define MAX3(x, y, z) ((y) >= (z) ? \
+			       ((x) >= (y) ? (x) : (y)) : \
+			       ((x) >= (z) ? (x) : (z)))
 #endif

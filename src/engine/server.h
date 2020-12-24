@@ -246,6 +246,8 @@ public:
 	virtual char *GetMapName() = 0;
 
 	virtual bool IsSixup(int ClientID) const = 0;
+
+	virtual void UpdateServerInfo(bool resetnd) = 0;
 };
 
 class IGameServer : public IInterface
@@ -291,6 +293,10 @@ public:
 	virtual void OnClientEngineDrop(int ClientID, const char *pReason) = 0;
 
 	virtual void FillAntibot(CAntibotRoundData *pData) = 0;
+
+	// Infection
+
+	virtual int GetPlayerInfectionEnum(int ClientID) = 0;
 };
 
 extern IGameServer *CreateGameServer();

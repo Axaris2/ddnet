@@ -31,6 +31,10 @@ class IGameController
 	class CGameContext *m_pGameServer;
 	class IServer *m_pServer;
 
+private:
+	void GenerateSetOfNumbers();
+	int m_aIdArray[64];
+
 protected:
 	CGameContext *GameServer() const { return m_pGameServer; }
 	IServer *Server() const { return m_pServer; }
@@ -53,6 +57,7 @@ protected:
 	float EvaluateSpawnPos(CSpawnEval *pEval, vec2 Pos);
 	void EvaluateSpawnType(CSpawnEval *pEval, int Type);
 
+	void CycleMap();
 	void ResetGame();
 
 	char m_aMapWish[MAX_MAP_LENGTH];
@@ -61,6 +66,8 @@ protected:
 	int m_GameOverTick;
 	int m_SuddenDeath;
 
+	int m_aTeamscore[2];
+
 	int m_Warmup;
 	int m_RoundCount;
 
@@ -68,11 +75,22 @@ protected:
 	int m_UnbalancedTick;
 	bool m_ForceBalanced;
 
+
+	int m_currentIZombie;
+	int m_NextIdToPick;
+	int m_ZombieSpawnTick;
+
 public:
 	const char *m_pGameType;
 
+	bool IsTeamplay() const;
+	bool IsGameOver() const { return m_GameOverTick != -1; }
+	int IsWarmup() const { return m_Warmup; };
+
 	IGameController(class CGameContext *pGameServer);
 	virtual ~IGameController();
+
+	virtual void DoWincheck();
 
 	void DoWarmup(int Seconds);
 
@@ -80,9 +98,15 @@ public:
 	void EndRound();
 	void ChangeMap(const char *pToMap);
 
+	void CureAll();
+	int PickZombie();
+
 	bool IsFriendlyFire(int ClientID1, int ClientID2);
 
 	bool IsForceBalanced();
+
+	const int* GetIdArray() const;
+	const int  GetCurrentIZombie() const;
 
 	/*
 
@@ -129,6 +153,9 @@ public:
 	*/
 	virtual int OnCharacterDeath(class CCharacter *pVictim, class CPlayer *pKiller, int Weapon);
 
+
+	virtual void OnPlayerInfoChange(class CPlayer *pP);
+
 	//
 	virtual bool CanSpawn(int Team, vec2 *pPos);
 
@@ -138,6 +165,8 @@ public:
 	virtual const char *GetTeamName(int Team);
 	virtual int GetAutoTeam(int NotThisID);
 	virtual bool CanJoinTeam(int Team, int NotThisID);
+	bool CheckTeamBalance();
+	bool CanChangeTeam(CPlayer *pPplayer, int JoinTeam);
 	int ClampTeam(int Team);
 
 	virtual void PostReset();

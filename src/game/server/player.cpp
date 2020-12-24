@@ -11,6 +11,8 @@
 #include <game/server/teams.h>
 #include <game/version.h>
 #include <time.h>
+#include "gamemodes/infection.h"
+#include "bot.h"
 
 MACRO_ALLOC_POOL_ID_IMPL(CPlayer, MAX_CLIENTS)
 
@@ -19,15 +21,40 @@ IServer *CPlayer::Server() const { return m_pGameServer->Server(); }
 CPlayer::CPlayer(CGameContext *pGameServer, int ClientID, int Team)
 {
 	m_pGameServer = pGameServer;
+	m_RespawnTick = Server()->Tick();
+	m_DieTick = Server()->Tick();
+	m_ScoreStartTick = Server()->Tick();
 	m_ClientID = ClientID;
 	m_Team = GameServer()->m_pController->ClampTeam(Team);
+	//m_SpectatorID = SPEC_FREEVIEW;
+	m_LastActionTick = Server()->Tick();
+	m_TeamChangeTick = Server()->Tick();
+
+	m_pCharacter = 0;
 	m_NumInputs = 0;
 	Reset();
 	GameServer()->Antibot()->OnPlayerInit(m_ClientID);
+
+	if (GameServer()->m_pController->IsWarmup())
+		m_Zombie = HUMAN;
+	else
+		m_Zombie = ZOMBIE;
+
+	m_Kills = 0;
+	m_AirstrikeNotFirework = true;
+	m_HasSuperJump = false;
+	m_HasAirstrike = false;
+	m_HasFirework = false;
+
+	m_IsBot = false;
+
+	m_Muted = false;
 }
 
 CPlayer::~CPlayer()
 {
+	if(m_pBot)
+		delete m_pBot;
 	GameServer()->Antibot()->OnPlayerDestroy(m_ClientID);
 	delete m_pLastTarget;
 	delete m_pCharacter;
@@ -41,6 +68,8 @@ void CPlayer::Reset()
 	m_JoinTick = Server()->Tick();
 	delete m_pCharacter;
 	m_pCharacter = 0;
+	if(m_pBot)
+		delete m_pBot;
 	m_SpectatorID = SPEC_FREEVIEW;
 	m_LastActionTick = Server()->Tick();
 	m_TeamChangeTick = Server()->Tick();
@@ -104,7 +133,7 @@ void CPlayer::Reset()
 	}
 	m_DefEmoteReset = -1;
 
-	GameServer()->Score()->PlayerData(m_ClientID)->Reset();
+	//GameServer()->Score()->PlayerData(m_ClientID)->Reset();
 
 	m_ShowOthers = g_Config.m_SvShowOthersDefault;
 	m_ShowAll = g_Config.m_SvShowAllDefault;
@@ -116,8 +145,7 @@ void CPlayer::Reset()
 	m_DND = false;
 
 	m_LastPause = 0;
-	m_Score = -9999;
-	m_HasFinishScore = false;
+;	m_HasFinishScore = false;
 
 	// Variable initialized:
 	m_Last_Team = 0;
@@ -169,19 +197,10 @@ void CPlayer::Tick()
 #ifdef CONF_DEBUG
 	if(!g_Config.m_DbgDummies || m_ClientID < MAX_CLIENTS - g_Config.m_DbgDummies)
 #endif
-		if(m_ScoreQueryResult != nullptr && m_ScoreQueryResult->m_Completed)
-		{
-			ProcessScoreResult(*m_ScoreQueryResult);
-			m_ScoreQueryResult = nullptr;
-		}
-	if(m_ScoreFinishResult != nullptr && m_ScoreFinishResult->m_Completed)
-	{
-		ProcessScoreResult(*m_ScoreFinishResult);
-		m_ScoreFinishResult = nullptr;
-	}
 
-	if(!Server()->ClientIngame(m_ClientID))
-		return;
+	if(!m_IsBot)
+		if(!Server()->ClientIngame(m_ClientID))
+			return;
 
 	if(m_ChatScore > 0)
 		m_ChatScore--;
@@ -247,6 +266,8 @@ void CPlayer::Tick()
 			{
 				delete m_pCharacter;
 				m_pCharacter = 0;
+				if(IsBot())
+					m_pBot->OnReset();
 			}
 		}
 		else if(m_Spawning && !m_WeakHookSpawn)
@@ -254,7 +275,9 @@ void CPlayer::Tick()
 	}
 	else
 	{
+		++m_RespawnTick;
 		++m_DieTick;
+		++m_ScoreStartTick;
 		++m_PreviousDieTick;
 		++m_JoinTick;
 		++m_LastActionTick;
@@ -293,8 +316,9 @@ void CPlayer::PostPostTick()
 #ifdef CONF_DEBUG
 	if(!g_Config.m_DbgDummies || m_ClientID < MAX_CLIENTS - g_Config.m_DbgDummies)
 #endif
-		if(!Server()->ClientIngame(m_ClientID))
-			return;
+		if(!m_IsBot)
+			if(!Server()->ClientIngame(m_ClientID))
+				return;
 
 	if(!GameServer()->m_World.m_Paused && !m_pCharacter && m_Spawning && m_WeakHookSpawn)
 		TryRespawn();
@@ -305,8 +329,9 @@ void CPlayer::Snap(int SnappingClient)
 #ifdef CONF_DEBUG
 	if(!g_Config.m_DbgDummies || m_ClientID < MAX_CLIENTS - g_Config.m_DbgDummies)
 #endif
-		if(!Server()->ClientIngame(m_ClientID))
-			return;
+		if(!m_IsBot)
+			if(!Server()->ClientIngame(m_ClientID))
+				return;
 
 	int id = m_ClientID;
 	if(SnappingClient > -1 && !Server()->Translate(id, SnappingClient))
@@ -316,36 +341,62 @@ void CPlayer::Snap(int SnappingClient)
 	if(!pClientInfo)
 		return;
 
-	StrToInts(&pClientInfo->m_Name0, 4, Server()->ClientName(m_ClientID));
-	StrToInts(&pClientInfo->m_Clan0, 3, Server()->ClientClan(m_ClientID));
-	pClientInfo->m_Country = Server()->ClientCountry(m_ClientID);
-	StrToInts(&pClientInfo->m_Skin0, 6, m_TeeInfos.m_SkinName);
-	pClientInfo->m_UseCustomColor = m_TeeInfos.m_UseCustomColor;
-	pClientInfo->m_ColorBody = m_TeeInfos.m_ColorBody;
+	//infection
+	if(!m_IsBot)
+	{
+		StrToInts(&pClientInfo->m_Name0, 4, Server()->ClientName(m_ClientID));
+		StrToInts(&pClientInfo->m_Clan0, 3, (m_Zombie != HUMAN) ? (m_Zombie == ZOMBIE) ? "Zombie" : "iZombie" : Server()->ClientClan(m_ClientID));
+		pClientInfo->m_Country = Server()->ClientCountry(m_ClientID);
+		StrToInts(&pClientInfo->m_Skin0, 6, m_Zombie ? "cammo" : m_TeeInfos.m_SkinName);
+	}
+	else
+	{
+		StrToInts(&pClientInfo->m_Name0, 4, m_pBot->GetName());
+		StrToInts(&pClientInfo->m_Clan0, 3, (m_Zombie != HUMAN) ? (m_Zombie == ZOMBIE) ? "Zombie" : "iZombie" : m_pBot->GetClan());
+		pClientInfo->m_Country = 0;
+		StrToInts(&pClientInfo->m_Skin0, 6, m_Zombie ? "cammo" : g_Config.m_SvBotSkin);
+	}
+
+	pClientInfo->m_UseCustomColor = m_Zombie ? true : false;
+	pClientInfo->m_ColorBody = m_Zombie ? g_Config.m_InfZombieBodyColor : m_TeeInfos.m_ColorBody;
 	pClientInfo->m_ColorFeet = m_TeeInfos.m_ColorFeet;
+
+	// update all 0.7 client skins
+	if(Server()->IsSixup(m_ClientID)) 
+	{
+		for(const CPlayer *each : m_pGameServer->m_apPlayers)
+		{
+			if(each)
+			{
+				m_pGameServer->SendSkinChange(m_ClientID, each->GetCID());
+			}
+		}
+	}
 
 	int ClientVersion = GetClientVersion();
 	int Latency = SnappingClient == -1 ? m_Latency.m_Min : GameServer()->m_apPlayers[SnappingClient]->m_aActLatency[m_ClientID];
-	int Score = abs(m_Score) * -1;
+	int Score = m_Score;
 
 	// send 0 if times of others are not shown
 	if(SnappingClient != m_ClientID && g_Config.m_SvHideScore)
-		Score = -9999;
+		Score = 0;
 
 	if(SnappingClient < 0 || !Server()->IsSixup(SnappingClient))
 	{
-		CNetObj_PlayerInfo *pPlayerInfo = static_cast<CNetObj_PlayerInfo *>(Server()->SnapNewItem(NETOBJTYPE_PLAYERINFO, id, sizeof(CNetObj_PlayerInfo)));
-		if(!pPlayerInfo)
-			return;
+	CNetObj_PlayerInfo *pPlayerInfo = static_cast<CNetObj_PlayerInfo *>(Server()->SnapNewItem(NETOBJTYPE_PLAYERINFO, id, sizeof(CNetObj_PlayerInfo)));
+	if(!pPlayerInfo)
+		return;
 
 		pPlayerInfo->m_Latency = Latency;
 		pPlayerInfo->m_Score = Score;
 		pPlayerInfo->m_Local = (int)(m_ClientID == SnappingClient && (m_Paused != PAUSE_PAUSED || ClientVersion >= VERSION_DDNET_OLD));
 		pPlayerInfo->m_ClientID = id;
 		pPlayerInfo->m_Team = (ClientVersion < VERSION_DDNET_OLD || m_Paused != PAUSE_PAUSED || m_ClientID != SnappingClient) && m_Paused < PAUSE_SPEC ? m_Team : TEAM_SPECTATORS;
-
+		
 		if(m_ClientID == SnappingClient && m_Paused == PAUSE_PAUSED && ClientVersion < VERSION_DDNET_OLD)
 			pPlayerInfo->m_Team = TEAM_SPECTATORS;
+		if(m_IsBot)
+			pPlayerInfo->m_Latency = 0;
 	}
 	else
 	{
@@ -358,9 +409,13 @@ void CPlayer::Snap(int SnappingClient)
 			pPlayerInfo->m_PlayerFlags |= protocol7::PLAYERFLAG_ADMIN;
 
 		// Times are in milliseconds for 0.7
-		pPlayerInfo->m_Score = Score == -9999 ? -1 : -Score * 1000;
+		pPlayerInfo->m_Score = Score;
 		pPlayerInfo->m_Latency = Latency;
+		if(m_IsBot)
+			pPlayerInfo->m_Latency = 0;
 	}
+
+
 
 	if(m_ClientID == SnappingClient && (m_Team == TEAM_SPECTATORS || m_Paused))
 	{
@@ -452,7 +507,7 @@ void CPlayer::FakeSnap()
 	pPlayerInfo->m_Latency = m_Latency.m_Min;
 	pPlayerInfo->m_Local = 1;
 	pPlayerInfo->m_ClientID = FakeID;
-	pPlayerInfo->m_Score = -9999;
+	pPlayerInfo->m_Score = m_Score;
 	pPlayerInfo->m_Team = TEAM_SPECTATORS;
 
 	CNetObj_SpectatorInfo *pSpectatorInfo = static_cast<CNetObj_SpectatorInfo *>(Server()->SnapNewItem(NETOBJTYPE_SPECTATORINFO, FakeID, sizeof(CNetObj_SpectatorInfo)));
@@ -489,8 +544,8 @@ void CPlayer::OnDisconnect(const char *pReason)
 			GameServer()->SendChat(-1, CGameContext::CHAT_ALL, "Server kick/spec votes are no longer actively moderated.");
 	}
 
-	CGameControllerDDRace *Controller = (CGameControllerDDRace *)GameServer()->m_pController;
-	if(g_Config.m_SvTeam != 3)
+	CGameControllerInfection* Controller = (CGameControllerInfection*)GameServer()->m_pController;
+	if (g_Config.m_SvTeam != 3)
 		Controller->m_Teams.SetForceCharacterTeam(m_ClientID, TEAM_FLOCK);
 }
 
@@ -592,6 +647,8 @@ void CPlayer::KillCharacter(int Weapon)
 
 		delete m_pCharacter;
 		m_pCharacter = 0;
+		if(IsBot())
+			m_pBot->OnReset();
 	}
 }
 
@@ -629,7 +686,7 @@ void CPlayer::SetTeam(int Team, bool DoChatMsg)
 
 	if(Team == TEAM_SPECTATORS)
 	{
-		CGameControllerDDRace *Controller = (CGameControllerDDRace *)GameServer()->m_pController;
+		CGameControllerInfection*Controller = (CGameControllerInfection*)GameServer()->m_pController;
 		if(g_Config.m_SvTeam != 3 && m_pCharacter)
 		{
 			// Joining spectators should not kill a locked team, but should still
@@ -643,13 +700,21 @@ void CPlayer::SetTeam(int Team, bool DoChatMsg)
 	KillCharacter();
 
 	m_Team = Team;
+
+	if (GameServer()->m_pController->IsWarmup())
+		m_Zombie = HUMAN;
+	else
+		m_Zombie = ZOMBIE;
+
 	m_LastSetTeam = Server()->Tick();
 	m_LastActionTick = Server()->Tick();
 	m_SpectatorID = SPEC_FREEVIEW;
+	// we got to wait 0.5 secs before respawning
+	m_RespawnTick = Server()->Tick() + Server()->TickSpeed() / 2;
 	str_format(aBuf, sizeof(aBuf), "team_join player='%d:%s' m_Team=%d", m_ClientID, Server()->ClientName(m_ClientID), m_Team);
 	GameServer()->Console()->Print(IConsole::OUTPUT_LEVEL_DEBUG, "game", aBuf);
 
-	//GameServer()->m_pController->OnPlayerInfoChange(GameServer()->m_apPlayers[m_ClientID]);
+	GameServer()->m_pController->OnPlayerInfoChange(GameServer()->m_apPlayers[m_ClientID]);
 
 	protocol7::CNetMsg_Sv_Team Msg;
 	Msg.m_ClientID = m_ClientID;
@@ -709,10 +774,81 @@ bool CPlayer::SetTimerType(int TimerType)
 			return false;
 		}
 	}
-	else
+	else 
 		m_TimerType = TimerType;
 
 	return true;
+}
+
+void CPlayer::Infect(int By, int Weapon) {
+	if (m_Zombie)
+		return;
+
+	if (m_pCharacter) {
+		m_pCharacter->ClearWeapons();
+		m_pCharacter->GiveWeapon(WEAPON_HAMMER, -1);
+		m_pCharacter->SetWeapon(WEAPON_HAMMER);
+	}
+
+	if (By == -1)
+	{
+		m_Zombie = ZOMBIE;
+		m_Kills = 0;
+		m_AirstrikeNotFirework = true;
+		return;
+	}
+
+	// send the kill message
+	CNetMsg_Sv_KillMsg Msg;
+	Msg.m_Killer = By;
+	Msg.m_Victim = m_ClientID;
+	Msg.m_Weapon = Weapon;
+	Msg.m_ModeSpecial = 0;
+	Server()->SendPackMsg(&Msg, MSGFLAG_VITAL, -1);
+
+	if (m_pCharacter)
+		GameServer()->CreatePlayerSpawn(m_pCharacter->m_Pos);
+
+	GameServer()->m_pController->OnCharacterDeath(m_pCharacter, GameServer()->m_apPlayers[By], WEAPON_HAMMER);
+
+	m_Zombie = ZOMBIE;
+	m_Kills = 0;
+	if(IsBot() && m_pBot)
+		m_pBot->OnReset();
+	m_AirstrikeNotFirework = true;
+}
+
+void CPlayer::Cure(int By, int Weapon) {
+	if (!m_Zombie)
+		return;
+
+	m_Zombie = HUMAN;
+	m_Kills = 0;
+	m_AirstrikeNotFirework = true;
+
+	if (m_pCharacter) {
+		m_pCharacter->GiveWeapon(WEAPON_HAMMER, -1);
+		m_pCharacter->GiveWeapon(WEAPON_GUN, 10);
+		m_pCharacter->SetWeapon(WEAPON_GUN);
+	}
+
+	if (By == -1)
+		return;
+
+	char str[512] = { 0 };
+	sprintf(str,
+		"%s was cured by %s",
+		Server()->ClientName(m_ClientID),
+		GameServer()->m_apPlayers[By] ? Server()->ClientName(By) : "(unknown)");
+	GameServer()->SendChatTarget(-1, str);
+
+	if(IsBot() && m_pBot)
+		m_pBot->OnReset();
+}
+
+bool CPlayer::SpawnProtection()
+{
+	return (m_RespawnTick + Server()->TickSpeed() * g_Config.m_InfSafeSpawnDelay) >= Server()->Tick();
 }
 
 void CPlayer::TryRespawn()
@@ -731,6 +867,20 @@ void CPlayer::TryRespawn()
 	if(g_Config.m_SvTeam == 3)
 		m_pCharacter->SetSolo(true);
 }
+
+bool CPlayer::IsInfTeam(int ClientID)
+{
+	bool res = false;
+
+	CPlayer* pPlayer = GameServer()->m_apPlayers[ClientID];
+	if (pPlayer)
+	{
+		res = (Infected() == pPlayer->Infected());
+	}
+
+	return res;
+}
+
 
 bool CPlayer::AfkTimer(int NewTargetX, int NewTargetY)
 {

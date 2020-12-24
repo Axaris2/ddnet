@@ -15,12 +15,15 @@ public:
 		vec2 Pos,
 		vec2 Dir,
 		int Span,
+		int Damage,
 		bool Freeeze,
 		bool Explosive,
 		float Force,
 		int SoundImpact,
+		int Weapon,
 		int Layer = 0,
-		int Number = 0);
+		int Number = 0,
+		int Firework = 0);
 
 	vec2 GetPos(float Time);
 	void FillInfo(CNetObj_Projectile *pProj);
@@ -35,11 +38,13 @@ private:
 	int m_LifeSpan;
 	int m_Owner;
 	int m_Type;
-	//int m_Damage;
+	int m_Damage;
 	int m_SoundImpact;
+	int m_Weapon;
 	float m_Force;
 	int m_StartTick;
 	bool m_Explosive;
+	int m_Firework;
 
 	// DDRace
 

@@ -65,6 +65,10 @@ public:
 	bool Get(const char *pName, float *pValue);
 };
 
+// 0.7 compliant
+#define direction(x) GetDir(x)
+#define angle(x) GetAngle(x)
+
 inline vec2 GetDirection(int Angle)
 {
 	float a = Angle / 256.0f;
@@ -254,6 +258,17 @@ public:
 	void Reset();
 	void Tick(bool UseInput);
 	void Move();
+
+	CTeamsCore getTeamms()
+	{
+		return *m_pTeams;
+	}
+
+	
+	CTeamsCore *Teamms()
+	{
+		return m_pTeams;
+	}
 
 	void Read(const CNetObj_CharacterCore *pObjCore);
 	void Write(CNetObj_CharacterCore *pObjCore);

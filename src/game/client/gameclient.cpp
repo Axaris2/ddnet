@@ -1084,7 +1084,7 @@ static CGameInfo GetGameInfo(const CNetObj_GameInfoEx *pInfoEx, int InfoExSize, 
 
 	CGameInfo Info;
 	Info.m_FlagStartsRace = FastCap;
-	Info.m_TimeScore = Race;
+	Info.m_TimeScore = 0;
 	Info.m_UnlimitedAmmo = Race;
 	Info.m_DDRaceRecordMessage = DDRace && !DDNet;
 	Info.m_RaceRecordMessage = DDNet || (Race && !DDRace);
@@ -1111,7 +1111,7 @@ static CGameInfo GetGameInfo(const CNetObj_GameInfoEx *pInfoEx, int InfoExSize, 
 
 	if(Version >= 0)
 	{
-		Info.m_TimeScore = Flags & GAMEINFOFLAG_TIMESCORE;
+		Info.m_TimeScore = 0;
 	}
 	if(Version >= 2)
 	{
@@ -1535,8 +1535,8 @@ void CGameClient::OnNewSnapshot()
 			return str_comp_nocase(m_aClients[p1->m_ClientID].m_aName, m_aClients[p2->m_ClientID].m_aName) < 0;
 		});
 
-	bool TimeScore = m_GameInfo.m_TimeScore;
-
+	//infection
+	bool TimeScore = false;
 	// sort player infos by score
 	mem_copy(m_Snap.m_paInfoByScore, m_Snap.m_paInfoByName, sizeof(m_Snap.m_paInfoByScore));
 	std::stable_sort(m_Snap.m_paInfoByScore, m_Snap.m_paInfoByScore + MAX_CLIENTS,

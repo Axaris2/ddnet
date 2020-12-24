@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <new>
 
+#include "gamemodes/infection.h"
 #include "gamemodes/DDRace.h"
 #include "teams.h"
 #include <engine/shared/config.h>
@@ -411,7 +412,7 @@ int CSaveTeam::save(int Team)
 {
 	if(g_Config.m_SvTeam == 3 || (Team > 0 && Team < MAX_CLIENTS))
 	{
-		CGameTeams *Teams = &(((CGameControllerDDRace *)m_pController)->m_Teams);
+		CGameTeams *Teams = &(((CGameControllerInfection *)m_pController)->m_Teams);
 
 		m_MembersCount = Teams->Count(Team);
 		if(m_MembersCount <= 0)
@@ -492,7 +493,7 @@ bool CSaveTeam::HandleSaveError(int Result, int ClientID, CGameContext *pGameCon
 
 void CSaveTeam::load(int Team, bool KeepCurrentWeakStrong)
 {
-	CGameTeams *pTeams = &(((CGameControllerDDRace *)m_pController)->m_Teams);
+	CGameTeams *pTeams = &(((CGameControllerInfection *)m_pController)->m_Teams);
 
 	pTeams->ChangeTeamState(Team, m_TeamState);
 	pTeams->SetTeamLock(Team, m_TeamLocked);

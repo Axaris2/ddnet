@@ -17,10 +17,14 @@ public:
 	virtual void TickPaused();
 	virtual void Snap(int SnappingClient);
 
+	int GetType() { return m_Type; }
+	int GetSubType() { return m_Subtype; }
+	bool IsSpawned() { return m_SpawnTick == -1; }
+
 private:
 	int m_Type;
 	int m_Subtype;
-	//int m_SpawnTick;
+	int m_SpawnTick;
 
 	// DDRace
 

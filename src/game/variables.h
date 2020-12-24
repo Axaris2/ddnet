@@ -191,6 +191,55 @@ MACRO_CONFIG_INT(ClVideoShowDirection, cl_video_showdirection, 0, 0, 1, CFGFLAG_
 MACRO_CONFIG_INT(ClVideoX264Crf, cl_video_crf, 18, 0, 51, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Set crf when encode video with libx264 (0 for highest quality, 51 for lowest)")
 MACRO_CONFIG_INT(ClVideoX264Preset, cl_video_preset, 5, 0, 9, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Set preset when encode video with libx264, default is 5 (medium), 0 is ultrafast, 9 is placebo (the slowest, not recommend)")
 
+
+
+//Server Bots
+MACRO_CONFIG_INT(SvBotSlots, sv_bot_slots, 2, 0, MAX_CLIENTS, CFGFLAG_SERVER, "Number of slots to reserve for bots")
+MACRO_CONFIG_STR(SvBotSkin, sv_bot_skin, 24, "default", CFGFLAG_SERVER, "Bot skin")
+MACRO_CONFIG_INT(SvBotAllowHook, sv_bot_allow_hook, 1, 0, 1, CFGFLAG_SERVER, "Bots are allowed to hook")
+MACRO_CONFIG_INT(SvBotAllowMove, sv_bot_allow_move, 1, 0, 1, CFGFLAG_SERVER, "Bots are allowed to move")
+MACRO_CONFIG_INT(SvBotAllowFire, sv_bot_allow_fire, 1, 0, 1, CFGFLAG_SERVER, "Bots fire")
+MACRO_CONFIG_INT(SvBotAllowChat, sv_bot_allow_chat, 1, 0, 1, CFGFLAG_SERVER, "Bots answers in chat")
+MACRO_CONFIG_INT(SvBotThreatenTarget, sv_bot_threaten_target, 1, 0, 2, CFGFLAG_SERVER, "Bots threaten its target in chat (0 = off, 1 = whisper, 2 = public)")
+MACRO_CONFIG_INT(SvBotDrawTarget, sv_bot_draw_target, 0, 0, 1, CFGFLAG_SERVER, "Show bot target")
+MACRO_CONFIG_INT(SvBotEngineDrawGraph, sv_botengine_draw_graph, 0, 0, 1, CFGFLAG_SERVER, "Draw graph")
+
+// infection
+MACRO_CONFIG_INT(SvRoundSwap, sv_round_swap, 1, 0, 1, CFGFLAG_SERVER, "Swap teams between rounds")
+MACRO_CONFIG_INT(SvRoundsPerMap, sv_rounds_per_map, 1, 1, 100, CFGFLAG_SERVER, "Number of rounds on each map before rotating")
+MACRO_CONFIG_STR(SvMaprotation, sv_maprotation, 768, "", CFGFLAG_SERVER, "Maps to rotate between")
+MACRO_CONFIG_INT(SvTeambalanceTime, sv_teambalance_time, 1, 0, 1000, CFGFLAG_SERVER, "How many minutes to wait before autobalancing teams")
+MACRO_CONFIG_INT(SvTeamdamage, sv_teamdamage, 0, 0, 1, CFGFLAG_SERVER, "Team damage")
+MACRO_CONFIG_INT(SvTimelimit, sv_timelimit, 0, 0, 1000, CFGFLAG_SERVER, "Time limit in minutes (0 disables)")
+MACRO_CONFIG_INT(SvScorelimit, sv_scorelimit, 20, 0, 1000, CFGFLAG_SERVER, "Score limit (0 disables)")
+MACRO_CONFIG_INT(InfWallDelay, inf_walldelay, 1, 0, 0, CFGFLAG_SERVER, "Time before wall is active(in seconds)")
+MACRO_CONFIG_INT(InfWallLife, inf_walllife, 30, 0, 0, CFGFLAG_SERVER, "Time wall stays(in seconds)")
+MACRO_CONFIG_INT(InfWallLength, inf_walllength, 256, 0, 0, CFGFLAG_SERVER, "Length of a wall(in pixels)")
+MACRO_CONFIG_INT(InfInfectionDelay, inf_infectiondelay, 10, 0, 0, CFGFLAG_SERVER, "Delay before the IZombie gets chosen.")
+MACRO_CONFIG_INT(InfAirstrikeKills, inf_airstrikekills, 5, 0, 0, CFGFLAG_SERVER, "Kills needed for an airstrike (0 = disable airstrike).")
+MACRO_CONFIG_INT(InfFireworkKills, inf_fireworkkills, 0, 0, 0, CFGFLAG_SERVER, "Kills needed for an firework (0 = disable firework).")
+MACRO_CONFIG_INT(InfSuperJumpKills, inf_superjumpkills, 2, 0, 0, CFGFLAG_SERVER, "Kills needed for superjump.")
+MACRO_CONFIG_INT(InfSuperJumpForce, inf_superjumpforce, 40, 0, 0, CFGFLAG_SERVER, "Strength of superjump.")
+MACRO_CONFIG_INT(InfZombieExplodes, inf_zombie_explodes, 1, 0, 2, CFGFLAG_SERVER, "Zombies explode. (0 = off, 1 = IZombie, 2 = All Zombies)")
+MACRO_CONFIG_STR(InfAirstrikeText, inf_airstrike_text, 512, "Red Alert. Military gave %s an airstrike!", CFGFLAG_SERVER, "Text send when someone earns an airstrike (%s = player name)")
+MACRO_CONFIG_STR(InfFireworkText, inf_firework_text, 512, "Red Alert. Military gave %s a firework!", CFGFLAG_SERVER, "Text send when someone earns a firework (%s = player name)")
+MACRO_CONFIG_STR(InfSuperJumpText, inf_superjump_text, 512, "%s mutated and can now superjump!", CFGFLAG_SERVER, "Text send when someone earns superjump (%s = player name)")
+MACRO_CONFIG_INT(InfAirstrikeType, inf_airstrike_type, 0, 0, 1, CFGFLAG_SERVER, "Airstrike type (0 = standard, 1 = V")
+MACRO_CONFIG_INT(InfSafeSpawnDelay, inf_safespawndelay, 0, 0, 5, CFGFLAG_SERVER, "Delay of spawn protection(in seconds)")
+MACRO_CONFIG_INT(InfAllowZombieSelfkill, inf_allow_zombie_selfkill, 1, 0, 1, CFGFLAG_SERVER, "Allow zombies to infect by selfkill.")
+MACRO_CONFIG_INT(InfAmountOfFireworks, inf_firework_type, 0, 0, 1, CFGFLAG_SERVER, "Firework type (0 = small, 1 = bigone!)")
+MACRO_CONFIG_INT(InfRandomIZombiePicking, inf_random_izombie_picking, 1, 0, 1, CFGFLAG_SERVER, "Pick iZombie randomly or in ID order (0 = id order, 1 = random)")
+
+MACRO_CONFIG_INT(SvShotgunForce, sv_shotgun_force, 0, 0, 256, CFGFLAG_SERVER, "Shotgun force")
+MACRO_CONFIG_INT(SvAllowFriendlyShotgun, sv_allow_friendly_shotgun, 0, 0, 1, CFGFLAG_SERVER, "Allow humans to blow each other away with the shotgun")
+MACRO_CONFIG_INT(InfZombieBodyColor, inf_zombie_body_color, 3920896, 0, 16777215, CFGFLAG_SERVER, "Zombie body color, default is 3920896.")
+
+MACRO_CONFIG_INT(SvPunishTime, sv_punish_time, 3, 0, 0, CFGFLAG_SERVER, "The time while player could be in 'punished' mode(in seconds)")
+MACRO_CONFIG_INT(SvTkPenalty, sv_teamkill_penalty, 2, 0, 10, CFGFLAG_SERVER, "The amount of point to decrease teamkiller's score")
+
+MACRO_CONFIG_INT(SvTpEffects, sv_tp_effects, 1, 0, 1, CFGFLAG_SERVER, "Render effects on teleport command")
+
+
 // debug
 #ifdef CONF_DEBUG // this one can crash the server if not used correctly
 MACRO_CONFIG_INT(DbgDummies, dbg_dummies, 0, 0, 15, CFGFLAG_SERVER, "")
