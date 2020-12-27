@@ -1934,6 +1934,10 @@ set_src(ENGINE_SERVER GLOB_RECURSE src/engine/server
   upnp.h
 )
 set_src(GAME_SERVER GLOB_RECURSE src/game/server
+  ai/genetics.cpp
+  ai/genetics.hacky
+  entities/wall.cpp
+  entities/wall.h
   ddracechat.cpp
   ddracechat.h
   ddracecommands.cpp
@@ -1967,11 +1971,17 @@ set_src(GAME_SERVER GLOB_RECURSE src/game/server
   gamecontroller.h
   gamemodes/DDRace.cpp
   gamemodes/DDRace.h
+  gamemodes/infection.cpp
+  gamemodes/infection.h
   gamemodes/gamemode.h
   gameworld.cpp
   gameworld.h
   player.cpp
   player.h
+  bot.cpp
+  bot.h
+  botengine.cpp
+  botengine.h
   save.cpp
   save.h
   score.cpp
